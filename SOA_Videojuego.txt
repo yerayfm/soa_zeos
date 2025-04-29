@@ -1,0 +1,201 @@
+Arquitectura estrictamente obligatoria
+
+2 Threads (teclado + pantalla) OBLIGATORIO
+
+Puede ser el videojuego que se quiera (pacman, snake, hangman, etc.)
+
+Milestones en orden!! 2 puntos cada uno
+
+Aqui los milestones:
+	Functional keyboard feature.
+	Functional screen feature.
+	Functional threads feature.
+	Functional semaphore feature.
+	Functional videogame.
+	
+Tras cada milestone consultar al profesor. Si nos da el OK significa que tendremos la puntiación entera. (Básicamente consultar si esta correcto o no obligatoriamente).
+
+Entrega OBLIGATORIA en el raco. (Yo diria de ir entregando cada milestone al raco cuando tengamos el visto bueno).
+
+
+
+1r Milestone: Teclado
+
+
+
+2 funciones:
+getkeyboradstate y pause 
+
+
+getkeyboardstate(vector con tantas posiciones que teclas haya (charmap)). 
+0 si esta pulsada y 1 si no lo esta.
+copiar el contenido del buffer al buffer de usuario.
+se va actualizando constantemente para saber que teclas estan o no pulsadas.
+
+pause(milisegundos que tiene que estar en pause el teclado);
+
+pasa de estado run a blocked y cuando acaba el timeout vuelve a ready.
+
+
+
+2o Milestone: Soporte Pantalla
+
+
+
+Pantalla emula modo EGA. 
+Para sacar caracteres por pantalla ->
+
+	A partidr de la dir 0xB8000 -- 4k; son direcciones de entrada salida a dispositivo
+	Matriz de 80 cols x 25 filas de pantallas. Cada pantalla tiene 2 bytes: El de mas peso es el caracter y el de menos peso es el color del caracter y el color de background. 4 bits por cada uno. (16 colores en total). 80x25x2 = 4000 Bytes
+	
+startScreen();
+
+en la tp del proceso mapea una dir fisica en una dir que este libre (que es la dir que retorna StartScreen. para escribir a partir de la dirección x que nos ha devuelto la funcion).
+
+SO en la C.R. (clock routine) va a leer la pagina y la va a volcar en la dir 0xB8000.
+És individual de cada proceso. El S.O mostrara la pantalla del proceso que este en run.
+
+Mirar devices.c para entender mejor.
+
+(Primeros 4 puntos MUY asequibles)
+
+
+
+3r Milestone: Aqui llega lo complicado
+
+
+
+Cooperación de procesos. Siempre se envian datos asique hay que implementar llamadas a sistema para esto. 
+Tener 2 trozos de codigo que se estan ejecutando. Los threads comparten memoria del proceso, por eso se pueden mandar información escribiendo en memoria. Asi se puede explotar el paralelismo para maximizar el tiempo de CPU cooperativamente. Y no hacen flushes (gran ventaja). 
+
+Threads (unidad minima de planificación). 
+
+Que necesito??
+
+Los procesos teienen recursos (PCB y tabla de paginas // También podrian tener tabla de canales, signals, etc..)
+
+Los threads teienen: 	Identificator (TID) que se guarda en un 
+			TCB (Thread Ccontrol Block)
+			Pila de usuario
+			Pila de sistema
+			TLS (Thread local storage) zona de memoria donde se guardan sus datos (ERRNO) ya que son los threads los que ejecutan llamadas a sistema. Por eso son locales de cada thread
+			
+
+int pthread_create(void(*func)(void *arg), void *arg);
+
+el primer parametro: cuando creo un thread le indicamos que funcion tiene que ejecutar. Siempre con la misma cabecera: void func(void *param);
+el segundo parametro es el que se le va a pasar a la funcion.
+
+Como crear un Thread? (codigo de sys_fork muuy parecido, sin bucles de copia y la preparacion de contexto algo diferente, pero nada mas)
+
+Implementación Linux (No hay procesos en Linux, el proceso es abstracto. El task union que usabamos para procesos, en linux se usa para los threads. A partir de ahora cuando se hable de un task union, se habalrá de un Thread.)
+
+En pthread_create.
+
+	asignar un task_union (TCB) usar el que cogiamos para procesos
+	inicializar el task_union (copy_data del padre al hijo (que es el nuevo thread) compartiendo estructuras entre threads de un mismo proceso es como se crean los procesos abstractos, ya que apuntan a la misma TP)
+	asignar un TID
+	alloc una pagina para la pila de usuario. ALLOC USER STACK
+	
+¡Complicado!
+
+	Una vez asignados estos recursos, habra que preparar el contexto de ejecución.
+1o que haremos: preparar la pila de usuario. En la pila de usuario guardar el frame de activación de esa funcion
+
+Pila usuario
+
+parametros de derecha a izquiera y una dirección de retorno.
+
+|   |
+-----
+|   |
+-----
+|ret|
+-----
+|arg|
+-----	
+
+-> En el task_union, esp del ctx hardware lo machacaremos y lo apuntaremos al ret de la pila de usuario, el eip lo pondremos en func y kernel_esp haremos que apunte a ebp.
+
+	una vez finalizado, lo metemos en la cola de ready.
+	hacemos un ret.
+
+Implementar para el proyecto un sys_clone	(CLONE_PROCESS o CLONE_THREAD,
+						void (*func)(void *arg),
+						void *arg,
+						int size_stask); Tamaño pila de usuario
+						
+						
+fork sigue existiendo, al igual que pthread_create. y los dos llaman a sys_clone.
+
+si un thread que estaba a bloqueado tiene mayor prioridad que el que esta en run, pasa directamente a run sin pasar por ready, y el que estaba en run pasa a ready.
+
+
+Milestone 4: Semaforos.
+
+
+
+Condición de carrera. 
+
+Implementaremos: cuando un thread toca variables sensisbles a condición de carrera, marcaremos zonas de exclusión mutua a mano, ya que el SO no los hace.
+
+Esto lo haremos con semaforos.
+
+Cuando estamos en una zona sensible de tener condición de carrera, la marcaremos como zona de exclusión mutua. Implementar bloqueos con semáforos básicamente
+
+¿Que es un semaforo?
+
+Estos codigos estan al final del tema 4 en las transparencias
+
+És un contador y una list_head:
+
+	sem_t {
+		int count;
+		list_head blocked;
+	}
+	
+inicialización:
+
+	sem_init(sem_t *s, int value){
+		s -> count = value;
+		WIT_LIST_HEAD(&s -> blocker);
+	}
+
+inicio exclusion mutua:
+
+	sem_wait(sem_t *s){
+		s -> count--;
+		if(s -> count < 0) {
+			list_add(current(), &s -> blocked);
+			sched_next();
+		}
+	}
+
+final exclusion mutua:
+	
+	sem_post(sem_t *s){
+		s -> count++;
+		if (s -> count <= 0) {
+			list_head *t = list_first (&s -> blocked);
+			list_del(t);
+			list.add(t, &ready_queue);
+		}
+	}
+	
+int a = 0;
+sem_t s;
+sem_init(&s, 1); //1 para marcar zonas de exclusión mutua
+
+	    T1 			    T2
+	
+	sem_wait(&s)		sem_wait(&s)
+	a++;			a++;
+	sem_post(&s)		sem_post(&s)
+
+
+
+Milestone 5: Mejorar el juego para sacar nota.
+
+
+
+
