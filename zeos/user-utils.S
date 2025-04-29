@@ -100,10 +100,3 @@ ENTRY(get_stats)
 	popl %ebp
 	ret
 
-ENTRY(GetKeyboardState)
-	pushl %ebp
-	movl %esp, %ebp
-	movl $6, %eax
-	call syscall_sysenter
-	popl %ebp
-	ret

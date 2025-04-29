@@ -28,6 +28,4 @@ int yield();
 
 int get_stats(int pid, struct stats *st);
 
-int GetKeyboardState(char *keyboard);
-
 #endif  /* __LIBC_H__ */

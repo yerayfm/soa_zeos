@@ -236,19 +236,3 @@ int sys_get_stats(int pid, struct stats *st)
   }
   return -ESRCH; /*ESRCH */
 }
-
-
-#include <keyboard.h> 
-
-int sys_GetKeyboardState(char *keyboard) {
-    if (!access_ok(VERIFY_WRITE, keyboard, 256)) {
-        return -EFAULT; // Gestion de error al verificar el acceso
-    }
-
-    extern unsigned char keyboard_state[256]; // Array global que almacena el estado de las teclas
-    if (copy_to_user(keyboard_state, keyboard, 256) < 0) {
-        return -EFAULT; // Gestion de error al copiar el estado del teclado
-    }
-
-    return 0; // Éxito
-}
